@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+import re
+
+import envoy
+import requests
+import pygithub3
+from bs4 import BeautifulSoup
+
+
+def main():
+    stats = {}
+    fetch_github_stats(stats)
+    fetch_pypi_stats(stats)
+    get_git_stats(stats)
+    
+    for key, value in stats.items():
+        print "%s: %s" % (key, value)
+
+def fetch_github_details():
+    response = envoy.run('git remote -v | grep "^origin" | head -1')
+    return response.std_out.split()[1]
+
+def fetch_github_stats(stats):
+    github_url = fetch_github_details()
+    print "Looking at %s" % github_url
+
+    username, repo_name = re.match(r'.*:(\w+)/([\w-]+)', github_url).groups()
+    service = pygithub3.Github(user=username, repo=repo_name)
+    repo = service.repos.get()
+    
+    stats['Watchers'] = repo.watchers
+    stats['Forks'] = repo.forks
+
+def fetch_pypi_stats(stats):
+    package_name = envoy.run('python setup.py --name').std_out.strip()
+    crate_url = 'http://crate.io/packages/%s/' % package_name
+    page_html = requests.get(crate_url).content
+    soup = BeautifulSoup(page_html)
+    results = soup.find_all('div', {'class': 'package'})
+    stats['Downloads'] = results[0].span.text
+
+
+def get_git_stats(stats):
+    response = envoy.run('git log --format="%an" | sort | uniq | wc -l')
+    stats['Contributors'] = response.std_out.strip()
+
+    response = envoy.run('git log --oneline | wc -l')
+    stats['Commits'] = response.std_out.strip()
+
+
+if __name__ == '__main__':
+    main()
